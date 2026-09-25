@@ -1,5 +1,5 @@
 // Grammar City service worker: offline play after the first visit.
-const VERSION = 'grammar-city-v1';
+const VERSION = 'grammar-city-v2';
 const SHELL = [
   './',
   './index.html',
@@ -30,7 +30,7 @@ self.addEventListener('fetch', e => {
   // Game files: network first (so updates arrive), cache as fallback.
   if (url.origin === location.origin) {
     e.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); return res; })
         .catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match('./index.html')))
     );

@@ -20,7 +20,9 @@ Gra jest aplikacją PWA — w Chrome/Edge kliknij „Zainstaluj aplikację” na
 
 ## Sterowanie
 
-`WASD` ruch/jazda · mysz kamera · `Shift` sprint · `Spacja` skok/ręczny · `F` wsiądź/wysiądź · `E` misja · `M` mapa i GPS · `H` pomoc · `N` dźwięk
+**Komputer:** `WASD` ruch/jazda · mysz kamera · `Shift` sprint · `Spacja` skok/ręczny · `F` wsiądź/wysiądź · `E` misja · `M` mapa i GPS · `H` pomoc · `N` dźwięk
+
+**Telefon / tablet:** lewy pad — ruch (także po skosie) · przeciągnięcie palcem po ekranie — kamera · SKOK (w aucie: HAMULEC) · BIEG · AUTO i MISJA pojawiają się, gdy można ich użyć · dotknięcie minimapy lub MAPA — mapa. Najwygodniej grać w poziomie.
 
 ## Uruchomienie lokalne
 

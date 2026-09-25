@@ -217,6 +217,48 @@ h2.place { margin: 8px 0 2px; font-family: var(--display); font-weight: 400; fon
   #hud-tl { max-width: calc(100% - 180px); } #objective { font-size: 15px; }
   .card-head, .card-body { padding-left: 16px; padding-right: 16px; }
 }
+/* ---------- Touch controls ---------- */
+body { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+body.touch, body.touch #game { touch-action: none; }
+#touch-ui { position: fixed; inset: 0; pointer-events: none; z-index: 6; --pad: clamp(128px, 36vmin, 190px); --btn: clamp(54px, 15vmin, 72px); }
+#dpad { position: absolute; left: calc(16px + env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: var(--pad); height: var(--pad); border-radius: 50%; pointer-events: auto; touch-action: none;
+  background: radial-gradient(circle, rgba(255,255,255,.10) 0 34%, rgba(10,12,18,.45) 35%); border: 2px solid rgba(255,255,255,.22); }
+#dpad .dp { position: absolute; width: 30%; height: 30%; display: grid; place-items: center; }
+#dpad .dp svg { width: 70%; height: 70%; fill: rgba(255,255,255,.75); }
+#dpad .dp.on svg { fill: var(--gold); }
+#dpad .up { left: 35%; top: 3%; } #dpad .down { left: 35%; bottom: 3%; } #dpad .left { left: 3%; top: 35%; } #dpad .right { right: 3%; top: 35%; }
+#dpad .knob { position: absolute; left: 35%; top: 35%; width: 30%; height: 30%; border-radius: 50%; background: rgba(242,182,50,.55);
+  border: 2px solid rgba(255,255,255,.6); pointer-events: none; transition: transform .05s; }
+#tbtns { position: absolute; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: grid; grid-template-columns: repeat(2, var(--btn)); gap: 10px; justify-items: center; align-items: end; }
+.tbtn { width: var(--btn); height: var(--btn); border-radius: 50%; pointer-events: auto; touch-action: none; padding: 0;
+  font-family: var(--cond); font-weight: 700; font-size: calc(var(--btn) * .22); letter-spacing: .04em; color: var(--text);
+  background: rgba(10,12,18,.55); border: 2px solid rgba(255,255,255,.35); }
+.tbtn.on { background: rgba(242,182,50,.45); }
+.tbtn.main { border-color: var(--gold); background: rgba(242,182,50,.25); }
+.tbtn.ctx { border-color: var(--green); background: rgba(69,212,131,.25); }
+.tbtn.small { width: calc(var(--btn) * .78); height: calc(var(--btn) * .78); border-color: var(--route); }
+.tbtn.off { visibility: hidden; }
+body.touch #crosshint, body.touch #rank, body.touch #xpbar { display: none; }
+body.touch #money { font-size: 28px; }
+body.touch #clock { font-size: 16px; margin-top: 2px; }
+body.touch #minimap-wrap { left: auto; bottom: auto; right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(78px + env(safe-area-inset-top, 0px)); width: 120px; height: 120px; }
+body.touch #minimap { width: 120px; height: 120px; }
+body.touch #speedo { bottom: auto; right: calc(14px + env(safe-area-inset-right, 0px)); top: calc(214px + env(safe-area-inset-top, 0px)); }
+body.touch #speedo b { font-size: 34px; }
+body.touch #hud-tl { left: calc(12px + env(safe-area-inset-left, 0px)); max-width: calc(100% - 170px); }
+body.touch #objective { font-size: 15px; padding: 7px 10px; }
+body.touch #objective small { font-size: 12px; }
+body.touch #prompt { bottom: calc(clamp(128px, 36vmin, 190px) + 30px + env(safe-area-inset-bottom, 0px)); font-size: 16px; pointer-events: auto; cursor: pointer; }
+body.touch .hint-keys { display: none; }
+@media (orientation: landscape) and (max-height: 500px) {
+  body.touch #prompt { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 2 * clamp(128px, 36vmin, 190px) - 200px); }
+  body.touch #toasts { top: 16%; }
+  #t-map, #tbtns > span { display: none; }
+}
+body.touch #minimap-wrap { pointer-events: auto; cursor: pointer; }
+
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -243,6 +285,25 @@ h2.place { margin: 8px 0 2px; font-family: var(--display); font-weight: 400; fon
   <div class="hud" id="crosshint">Kliknij w grę, aby sterować kamerą myszą · <kbd>H</kbd> pomoc</div>
 </div>
 <div id="banner" hidden></div>
+
+<!-- Touch controls (shown on phones / tablets) -->
+<div id="touch-ui" hidden>
+  <div id="dpad" role="group" aria-label="Kierunek ruchu">
+    <span class="dp up"><svg viewBox="0 0 24 24"><path d="M12 5l7 9H5z"/></svg></span>
+    <span class="dp down"><svg viewBox="0 0 24 24"><path d="M12 19l7-9H5z"/></svg></span>
+    <span class="dp left"><svg viewBox="0 0 24 24"><path d="M5 12l9-7v14z"/></svg></span>
+    <span class="dp right"><svg viewBox="0 0 24 24"><path d="M19 12l-9-7v14z"/></svg></span>
+    <span class="knob"></span>
+  </div>
+  <div id="tbtns">
+    <button class="tbtn small" id="t-map" data-tap="map">MAPA</button>
+    <span></span>
+    <button class="tbtn ctx off" id="t-car" data-tap="car">AUTO</button>
+    <button class="tbtn ctx off" id="t-mission" data-tap="mission">MISJA</button>
+    <button class="tbtn" id="t-sprint" data-hold="ShiftLeft">BIEG</button>
+    <button class="tbtn main" id="t-jump" data-hold="Space">SKOK</button>
+  </div>
+</div>
 
 <!-- Start screen -->
 <div class="overlay" id="start-ov">
@@ -272,7 +333,7 @@ h2.place { margin: 8px 0 2px; font-family: var(--display); font-weight: 400; fon
       <span class="meta" id="save-info"></span>
       <span class="confirm-row" id="reset-wrap"><button class="linkbtn" id="btn-reset">Zacznij od nowa</button></span>
     </div>
-    <div class="touch-note" id="touch-note" hidden>Ta gra wymaga klawiatury i myszy — najlepiej zagrać na komputerze.</div>
+    <div class="touch-note" id="touch-note" hidden>Sterowanie dotykowe: lewy pad — ruch, przeciągnięcie palcem po ekranie — kamera, przyciski po prawej — skok, bieg, auto, misja i mapa. Najlepiej grać w poziomie.</div>
   </div>
 </div>
 

@@ -772,6 +772,94 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => keys.delete(e.code));
 const key = (...c) => c.some(k => keys.has(k));
 
+// ---------------------------------------------------------------- touch controls (phones & tablets)
+let touchMode = false;
+const touchUI = $('touch-ui');
+const touchify = html => (touchMode ? html.replace(/<kbd>E<\/kbd>/g, '<kbd>MISJA</kbd>').replace(/<kbd>F<\/kbd>/g, '<kbd>AUTO</kbd>').replace('Naciśnij M', 'Dotknij MAPA') : html);
+function enableTouch() {
+  if (touchMode) return;
+  touchMode = true;
+  document.body.classList.add('touch');
+  $('touch-note').hidden = false;
+  setTimeout(resizeMinimap); // the minimap canvas is set up further down
+}
+if (matchMedia('(pointer: coarse)').matches) enableTouch();
+window.addEventListener('touchstart', enableTouch, { passive: true, once: true });
+
+// D-pad: the finger position relative to the centre picks W/A/S/D (diagonals included).
+const dpad = $('dpad'), knob = dpad.querySelector('.knob');
+let dpadId = null;
+const DIRS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
+function setDpad(dx, dy) {
+  const want = { KeyW: dy < -0.3, KeyS: dy > 0.3, KeyA: dx < -0.3, KeyD: dx > 0.3 };
+  for (const k in want) {
+    if (want[k]) keys.add(k); else keys.delete(k);
+    dpad.querySelector('.' + DIRS[k]).classList.toggle('on', want[k]);
+  }
+  const l = Math.min(1, Math.hypot(dx, dy)), a = Math.atan2(dy, dx);
+  knob.style.transform = `translate(${Math.cos(a) * l * 34}%, ${Math.sin(a) * l * 34}%)`;
+}
+function dpadMove(e) {
+  const r = dpad.getBoundingClientRect();
+  setDpad((e.clientX - r.left - r.width / 2) / (r.width / 2), (e.clientY - r.top - r.height / 2) / (r.height / 2));
+}
+dpad.addEventListener('pointerdown', e => { e.preventDefault(); dpadId = e.pointerId; try { dpad.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ } Sound.init(); dpadMove(e); });
+dpad.addEventListener('pointermove', e => { if (e.pointerId === dpadId) dpadMove(e); });
+const dpadEnd = e => { if (e.pointerId !== dpadId) return; dpadId = null; setDpad(0, 0); knob.style.transform = ''; };
+dpad.addEventListener('pointerup', dpadEnd);
+dpad.addEventListener('pointercancel', dpadEnd);
+dpad.addEventListener('lostpointercapture', dpadEnd);
+
+// Hold buttons (jump / sprint) press a key while the finger is down.
+touchUI.querySelectorAll('[data-hold]').forEach(b => {
+  const code = b.dataset.hold;
+  const up = () => { keys.delete(code); b.classList.remove('on'); };
+  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ } keys.add(code); b.classList.add('on'); });
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+});
+// Tap buttons fire an action once.
+const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap() };
+touchUI.querySelectorAll('[data-tap]').forEach(b => b.addEventListener('pointerdown', e => {
+  e.preventDefault(); Sound.init(); TAPS[b.dataset.tap]();
+}));
+// Tapping the minimap opens the full map.
+$('minimap-wrap').addEventListener('click', () => { if (touchMode && !ui) openMap(); });
+// The prompt is tappable too.
+$('prompt').addEventListener('click', () => { if (!touchMode || ui) return; if (nearMission) tryStartMission(); else toggleCar(); });
+
+// Drag anywhere on the 3D view to turn the camera.
+let camTouch = null;
+canvas.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' || ui || camTouch) return; camTouch = { id: e.pointerId, x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointermove', e => {
+  if (!camTouch || e.pointerId !== camTouch.id || ui) return;
+  camYaw -= (e.clientX - camTouch.x) * 0.006;
+  camPitch = clamp(camPitch + (e.clientY - camTouch.y) * 0.004, -0.15, 1.2);
+  camTouch.x = e.clientX; camTouch.y = e.clientY;
+  lastMouse = performance.now();
+});
+const camEnd = e => { if (camTouch && e.pointerId === camTouch.id) camTouch = null; };
+canvas.addEventListener('pointerup', camEnd);
+canvas.addEventListener('pointercancel', camEnd);
+
+// Keep the touch buttons in sync with the game state.
+let touchState = '';
+function updateTouchUI() {
+  if (!touchMode) return;
+  const show = !ui;
+  const carAvail = !!P.car || vehicles.some(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
+  const misAvail = !!nearMission && !P.car && isUnlocked(nearMission);
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}`;
+  if (st === touchState) return;
+  touchState = st;
+  touchUI.hidden = !show;
+  if (!show) { keys.clear(); setDpad(0, 0); }
+  $('t-car').classList.toggle('off', !carAvail);
+  $('t-car').textContent = P.car ? 'WYSIĄDŹ' : 'AUTO';
+  $('t-mission').classList.toggle('off', !misAvail);
+  $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
+  $('t-sprint').classList.toggle('off', !!P.car);
+}
+
 function onEscape() {
   if (ui === 'map') closeMap();
   else if (ui === 'help') closeHelp();
@@ -1315,7 +1403,7 @@ $('help-close').addEventListener('click', closeHelp);
 let shownMoney = save.money;
 function toast(msg, cls = '', ms = 3200) {
   const box = $('toasts');
-  const el = document.createElement('div'); el.className = `toast ${cls}`; el.innerHTML = msg;
+  const el = document.createElement('div'); el.className = `toast ${cls}`; el.innerHTML = touchify(msg);
   box.appendChild(el);
   while (box.children.length > 4) box.removeChild(box.firstChild);
   setTimeout(() => el.remove(), ms);
@@ -1331,7 +1419,7 @@ let promptHTML = '';
 function setPrompt(html) {
   if (html === promptHTML) return;
   promptHTML = html; const p = $('prompt');
-  p.hidden = !html; p.innerHTML = html;
+  p.hidden = !html; p.innerHTML = touchify(html);
 }
 function updateHUD(dt, clock) {
   shownMoney = lerp(shownMoney, save.money, Math.min(1, dt * 4));
@@ -1352,6 +1440,7 @@ function updateHUD(dt, clock) {
   else if (gps && gps.kind === 'mission') html = `${P.car ? 'Jedź' : 'Idź'} do: ${esc(gps.m.place)}<small>${esc(gps.m.topic)} · ${gps.m.level} · ${dist} m</small>`;
   else if (gps) html = `Cel na mapie<small>${dist} m</small>`;
   else html = 'Wybierz misję na mapie<small>Naciśnij M, aby otworzyć mapę i ustawić GPS.</small>';
+  html = touchify(html);
   if (obj.innerHTML !== html) obj.innerHTML = html;
   const gd = $('gpsdist');
   gd.hidden = !gps; if (gps) gd.textContent = `${dist} m`;
@@ -1656,7 +1745,6 @@ function showResetLink() {
   };
 }
 showResetLink();
-if (matchMedia('(pointer: coarse)').matches) $('touch-note').hidden = false;
 
 function startGame() {
   Sound.init();
@@ -1669,6 +1757,7 @@ function startGame() {
     showBanner('GRAMMAR CITY', 'Witaj w mieście!', '#f2b632', 2600);
     setTimeout(() => toast('Za Tobą ratusz — egzamin końcowy. Najpierw zdobądź doświadczenie w mieście.', '', 5500), 1500);
     setTimeout(() => toast('Obok stoi sportowe auto — podejdź i naciśnij <kbd>F</kbd>.', '', 5500), 4200);
+    if (touchMode) setTimeout(() => toast('Lewy pad — ruch · przeciągnij palcem po ekranie — kamera · dotknij minimapy — mapa', '', 6500), 300);
   }
   if (first) setTimeout(() => setGPS({ kind: 'mission', m: first }), 900);
 }
@@ -1716,6 +1805,7 @@ function frame() {
       gpsArrow.rotation.y = Math.atan2(nx - focus.x, nz - focus.z);
     } else gpsArrow.visible = false;
     if (!ui) checkMissionProximity();
+    updateTouchUI();
     hudT -= dt;
     drawMinimap(dt);
     if (hudT <= 0) { updateHUD(0.1, clockStr); hudT = 0.1; }
@@ -1739,10 +1829,14 @@ function adaptQuality(dt) {
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-  const small = window.innerWidth <= 640, s = small ? 150 : 230;
-  if (mm.width !== s) { mm.width = s; mm.height = s; }
+  resizeMinimap();
   if (ui === 'map') drawBigMap();
 });
+
+function resizeMinimap() {
+  const s = touchMode ? 120 : window.innerWidth <= 640 ? 150 : 230;
+  if (mm.width !== s) { mm.width = s; mm.height = s; }
+}
 
 // ---------------------------------------------------------------- boot
 async function boot() {
@@ -1766,7 +1860,7 @@ async function boot() {
   spawnPeds(40);
   buildMapCanvas();
   refreshNear(P.pos.x, P.pos.z);
-  if (window.innerWidth <= 640) { mm.width = 150; mm.height = 150; }
+  resizeMinimap();
   refreshStartInfo();
   btn.disabled = false; btn.textContent = doneCount() ? 'Kontynuuj grę' : 'Wejdź do miasta';
   btn.addEventListener('click', startGame);
