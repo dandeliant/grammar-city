@@ -787,9 +787,11 @@ if (matchMedia('(pointer: coarse)').matches) enableTouch();
 window.addEventListener('touchstart', enableTouch, { passive: true, once: true });
 
 // D-pad: the finger position relative to the centre picks W/A/S/D (diagonals included).
+// Phones use native touch events (most reliable across mobile browsers); mouse/pen use pointer events.
+const HAS_TOUCH = 'ontouchstart' in window;
 const dpad = $('dpad'), knob = dpad.querySelector('.knob');
-let dpadId = null;
 const DIRS = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
+let dpadId = null, dpadRect = null;
 function setDpad(dx, dy) {
   const want = { KeyW: dy < -0.3, KeyS: dy > 0.3, KeyA: dx < -0.3, KeyD: dx > 0.3 };
   for (const k in want) {
@@ -797,31 +799,63 @@ function setDpad(dx, dy) {
     dpad.querySelector('.' + DIRS[k]).classList.toggle('on', want[k]);
   }
   const l = Math.min(1, Math.hypot(dx, dy)), a = Math.atan2(dy, dx);
-  knob.style.transform = `translate(${Math.cos(a) * l * 34}%, ${Math.sin(a) * l * 34}%)`;
+  knob.style.transform = l ? `translate(${Math.cos(a) * l * 34}%, ${Math.sin(a) * l * 34}%)` : '';
 }
-function dpadMove(e) {
-  const r = dpad.getBoundingClientRect();
-  setDpad((e.clientX - r.left - r.width / 2) / (r.width / 2), (e.clientY - r.top - r.height / 2) / (r.height / 2));
+// Some mobile browsers report clientX/Y as 0 for touches — fall back to page coordinates.
+function touchXY(t) {
+  let x = t.clientX, y = t.clientY;
+  if (!x && !y) { x = (t.pageX || 0) - window.scrollX; y = (t.pageY || 0) - window.scrollY; }
+  return [x, y];
 }
-dpad.addEventListener('pointerdown', e => { e.preventDefault(); dpadId = e.pointerId; try { dpad.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ } Sound.init(); dpadMove(e); });
-dpad.addEventListener('pointermove', e => { if (e.pointerId === dpadId) dpadMove(e); });
-const dpadEnd = e => { if (e.pointerId !== dpadId) return; dpadId = null; setDpad(0, 0); knob.style.transform = ''; };
-dpad.addEventListener('pointerup', dpadEnd);
-dpad.addEventListener('pointercancel', dpadEnd);
-dpad.addEventListener('lostpointercapture', dpadEnd);
+function dpadAt(x, y) {
+  const r = dpadRect && dpadRect.width > 0 ? dpadRect : (dpadRect = dpad.getBoundingClientRect());
+  if (!(r.width > 0) || (!x && !y)) return; // ignore bogus samples instead of steering to the top-left
+  setDpad((x - r.left - r.width / 2) / (r.width / 2), (y - r.top - r.height / 2) / (r.height / 2));
+}
+function dpadRelease() { dpadId = null; dpadRect = null; setDpad(0, 0); }
+if (HAS_TOUCH) {
+  dpad.addEventListener('touchstart', e => {
+    e.preventDefault(); Sound.init();
+    const t = e.changedTouches[0]; dpadId = 't' + t.identifier; dpadRect = dpad.getBoundingClientRect();
+    dpadAt(...touchXY(t));
+  }, { passive: false });
+  dpad.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) if ('t' + t.identifier === dpadId) dpadAt(...touchXY(t));
+  }, { passive: false });
+  const tEnd = e => { for (const t of e.changedTouches) if ('t' + t.identifier === dpadId) dpadRelease(); };
+  dpad.addEventListener('touchend', tEnd); dpad.addEventListener('touchcancel', tEnd);
+}
+dpad.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') return;
+  e.preventDefault(); dpadId = 'p' + e.pointerId; dpadRect = dpad.getBoundingClientRect();
+  try { dpad.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+  dpadAt(e.clientX, e.clientY);
+});
+dpad.addEventListener('pointermove', e => { if (e.pointerType !== 'touch' && 'p' + e.pointerId === dpadId) dpadAt(e.clientX, e.clientY); });
+const pEnd = e => { if (e.pointerType !== 'touch' && 'p' + e.pointerId === dpadId) dpadRelease(); };
+dpad.addEventListener('pointerup', pEnd); dpad.addEventListener('pointercancel', pEnd);
 
 // Hold buttons (jump / sprint) press a key while the finger is down.
 touchUI.querySelectorAll('[data-hold]').forEach(b => {
   const code = b.dataset.hold;
+  const down = e => { e.preventDefault(); Sound.init(); keys.add(code); b.classList.add('on'); };
   const up = () => { keys.delete(code); b.classList.remove('on'); };
-  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ } keys.add(code); b.classList.add('on'); });
-  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+  if (HAS_TOUCH) {
+    b.addEventListener('touchstart', down, { passive: false });
+    b.addEventListener('touchend', up); b.addEventListener('touchcancel', up);
+  }
+  b.addEventListener('pointerdown', e => { if (e.pointerType !== 'touch') down(e); });
+  b.addEventListener('pointerup', e => { if (e.pointerType !== 'touch') up(); });
+  b.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') up(); });
 });
 // Tap buttons fire an action once.
 const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap() };
-touchUI.querySelectorAll('[data-tap]').forEach(b => b.addEventListener('pointerdown', e => {
-  e.preventDefault(); Sound.init(); TAPS[b.dataset.tap]();
-}));
+touchUI.querySelectorAll('[data-tap]').forEach(b => {
+  const fire = e => { e.preventDefault(); Sound.init(); TAPS[b.dataset.tap](); };
+  if (HAS_TOUCH) b.addEventListener('touchstart', fire, { passive: false });
+  b.addEventListener('pointerdown', e => { if (e.pointerType !== 'touch') fire(e); });
+});
 // Tapping the minimap opens the full map.
 $('minimap-wrap').addEventListener('click', () => { if (touchMode && !ui) openMap(); });
 // The prompt is tappable too.
@@ -829,17 +863,26 @@ $('prompt').addEventListener('click', () => { if (!touchMode || ui) return; if (
 
 // Drag anywhere on the 3D view to turn the camera.
 let camTouch = null;
-canvas.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' || ui || camTouch) return; camTouch = { id: e.pointerId, x: e.clientX, y: e.clientY }; });
-canvas.addEventListener('pointermove', e => {
-  if (!camTouch || e.pointerId !== camTouch.id || ui) return;
-  camYaw -= (e.clientX - camTouch.x) * 0.006;
-  camPitch = clamp(camPitch + (e.clientY - camTouch.y) * 0.004, -0.15, 1.2);
-  camTouch.x = e.clientX; camTouch.y = e.clientY;
+function camDrag(x, y) {
+  if (!camTouch || ui || (!x && !y)) return;
+  camYaw -= (x - camTouch.x) * 0.006;
+  camPitch = clamp(camPitch + (y - camTouch.y) * 0.004, -0.15, 1.2);
+  camTouch.x = x; camTouch.y = y;
   lastMouse = performance.now();
-});
-const camEnd = e => { if (camTouch && e.pointerId === camTouch.id) camTouch = null; };
-canvas.addEventListener('pointerup', camEnd);
-canvas.addEventListener('pointercancel', camEnd);
+}
+if (HAS_TOUCH) {
+  canvas.addEventListener('touchstart', e => {
+    if (ui || camTouch) return;
+    const t = e.changedTouches[0], [x, y] = touchXY(t);
+    camTouch = { id: t.identifier, x, y };
+  }, { passive: true });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) if (camTouch && t.identifier === camTouch.id) camDrag(...touchXY(t));
+  }, { passive: false });
+  const cEnd = e => { for (const t of e.changedTouches) if (camTouch && t.identifier === camTouch.id) camTouch = null; };
+  canvas.addEventListener('touchend', cEnd); canvas.addEventListener('touchcancel', cEnd);
+}
 
 // Keep the touch buttons in sync with the game state.
 let touchState = '';
@@ -852,7 +895,7 @@ function updateTouchUI() {
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
-  if (!show) { keys.clear(); setDpad(0, 0); }
+  if (!show) { keys.clear(); dpadRelease(); }
   $('t-car').classList.toggle('off', !carAvail);
   $('t-car').textContent = P.car ? 'WYSIĄDŹ' : 'AUTO';
   $('t-mission').classList.toggle('off', !misAvail);
@@ -1170,6 +1213,11 @@ function updateCamera(dt) {
   if (v && performance.now() - lastMouse > 1300 && Math.abs(v.speed) > 1.5) {
     camYaw += angDiff(camYaw, v.heading + Math.PI) * Math.min(1, dt * 2.6);
     camPitch = lerp(camPitch, 0.22, Math.min(1, dt));
+  }
+  if (!v && touchMode && P.speed > 1 && performance.now() - lastMouse > 1200) {
+    // follow unless the player runs back towards the camera
+    const toward = -(Math.sin(P.facing) * -Math.sin(camYaw) + Math.cos(P.facing) * -Math.cos(camYaw));
+    if (toward < 0.4) camYaw += angDiff(camYaw, P.facing + Math.PI) * Math.min(1, dt * 1.6);
   }
   const want = v ? 10.5 + Math.abs(v.speed) * 0.06 : 6.5;
   camDist = lerp(camDist, want, Math.min(1, dt * 3));
